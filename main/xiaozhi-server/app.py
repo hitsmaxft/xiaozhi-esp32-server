@@ -2,6 +2,7 @@ import sys
 import uuid
 import signal
 import asyncio
+from urllib.parse import urlsplit
 from aioconsole import ainput
 from config.settings import load_config
 from config.logger import setup_logging
@@ -76,17 +77,19 @@ async def main():
     ota_task = asyncio.create_task(ota_server.start())
 
     read_config_from_api = config.get("read_config_from_api", False)
+    server_config = config.get("server", {})
+    configured_websocket = server_config.get("websocket", "")
+    display_host = urlsplit(configured_websocket).hostname or get_local_ip()
     port = int(config["server"].get("http_port", 8003))
     if not read_config_from_api:
         logger.bind(tag=TAG).info(
             "OTA接口是\t\thttp://{}:{}/xiaozhi/ota/",
-            get_local_ip(),
+            display_host,
             port,
         )
     logger.bind(tag=TAG).info(
-        "视觉分析接口是\thttp://{}:{}/mcp/vision/explain",
-        get_local_ip(),
-        port,
+        "视觉分析接口是\t{}",
+        server_config.get("vision_explain") or f"http://{display_host}:{port}/mcp/vision/explain",
     )
     mcp_endpoint = config.get("mcp_endpoint", None)
     if mcp_endpoint is not None and "你" not in mcp_endpoint:
@@ -102,14 +105,12 @@ async def main():
 
     # 获取WebSocket配置，使用安全的默认值
     websocket_port = 8000
-    server_config = config.get("server", {})
     if isinstance(server_config, dict):
         websocket_port = int(server_config.get("port", 8000))
 
     logger.bind(tag=TAG).info(
-        "Websocket地址是\tws://{}:{}/xiaozhi/v1/",
-        get_local_ip(),
-        websocket_port,
+        "Websocket地址是\t{}",
+        configured_websocket or f"ws://{display_host}:{websocket_port}/xiaozhi/v1/",
     )
 
     logger.bind(tag=TAG).info(

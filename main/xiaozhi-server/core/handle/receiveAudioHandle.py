@@ -40,30 +40,24 @@ async def resume_vad_detection(conn: "ConnectionHandler"):
     conn.just_woken_up = False
 
 
-async def startToChat(conn: "ConnectionHandler", text):
-    # 检查输入是否是JSON格式（包含说话人信息）
-    speaker_name = None
-    actual_text = text
-
+def unpack_asr_text(text: str):
+    """Return spoken content and optional speaker, without ASR metadata."""
     try:
-        # 尝试解析JSON格式的输入
-        if text.strip().startswith("{") and text.strip().endswith("}"):
-            data = json.loads(text)
-            if "speaker" in data and "content" in data:
-                speaker_name = data["speaker"]
-                actual_content = data["content"]
-                conn.logger.bind(tag=TAG).info(f"解析到说话人信息: {speaker_name}")
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return text, None
+    if isinstance(data, dict) and isinstance(data.get("content"), str):
+        return data["content"], data.get("speaker")
+    return text, None
 
-                # 仅在该说话人首次出现时保留 {"speaker":...} JSON，让模型自然称呼一次；
-                # 后续轮降为纯文本，避免每轮重复出现名字诱导模型反复称呼
-                if speaker_name not in conn.introduced_speakers:
-                    conn.introduced_speakers.add(speaker_name)
-                    actual_text = text
-                else:
-                    actual_text = actual_content
-    except (json.JSONDecodeError, KeyError):
-        # 如果解析失败，继续使用原始文本
-        pass
+
+async def startToChat(conn: "ConnectionHandler", text):
+    # ASR metadata is transport data, not a user utterance. Only the spoken
+    # content belongs in the LLM dialogue or the text shown to the device.
+    actual_text, speaker_name = unpack_asr_text(text)
+    if speaker_name:
+        conn.logger.bind(tag=TAG).info(f"解析到说话人信息: {speaker_name}")
+        conn.introduced_speakers.add(speaker_name)
 
     # 保存说话人信息到连接对象
     if speaker_name:

@@ -31,6 +31,7 @@ _setup_websockets_logger()
 
 
 from core.connection import ConnectionHandler
+from core.recovery_registry import connections as recovery_connections
 from config.config_loader import get_config_from_api_async
 from core.auth import AuthManager, AuthenticationError
 from core.utils.modules_initialize import initialize_modules
@@ -127,11 +128,16 @@ class WebSocketServer:
             self._intent,
             self,  # 传入server实例
         )
+        recovery_device_id = websocket.request.headers.get("device-id", "").lower()
+        if recovery_device_id:
+            recovery_connections[recovery_device_id] = handler
         try:
             await handler.handle_connection(websocket)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"处理连接时出错: {e}")
         finally:
+            if recovery_connections.get(recovery_device_id) is handler:
+                recovery_connections.pop(recovery_device_id, None)
             # 强制关闭连接（如果还没有关闭的话）
             try:
                 # 安全地检查WebSocket状态并关闭

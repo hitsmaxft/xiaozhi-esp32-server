@@ -110,7 +110,9 @@ async def send_mcp_message(conn: "ConnectionHandler", payload: dict):
 
     try:
         await conn.websocket.send(message)
-        logger.bind(tag=TAG).debug(f"成功发送MCP消息: {message}")
+        logger.bind(tag=TAG).debug(
+            f"成功发送MCP消息: method={payload.get('method')} id={payload.get('id')}"
+        )
     except Exception as e:
         logger.bind(tag=TAG).error(f"发送MCP消息失败: {e}")
 
@@ -299,6 +301,7 @@ async def call_mcp_tool(
     tool_name: str,
     args: str = "{}",
     timeout: int = 30,
+    allow_unlisted: bool = False,
 ):
     """
     调用指定的工具，并等待响应
@@ -306,7 +309,7 @@ async def call_mcp_tool(
     if not await mcp_client.is_ready():
         raise RuntimeError("MCP客户端尚未准备就绪")
 
-    if not mcp_client.has_tool(tool_name):
+    if not allow_unlisted and not mcp_client.has_tool(tool_name):
         raise ValueError(f"工具 {tool_name} 不存在")
 
     tool_call_id = await mcp_client.get_next_id()
@@ -371,7 +374,7 @@ async def call_mcp_tool(
         "params": {"name": actual_name, "arguments": arguments},
     }
 
-    logger.bind(tag=TAG).info(f"发送客户端mcp工具调用请求: {actual_name}，参数: {args}")
+    logger.bind(tag=TAG).info(f"发送客户端mcp工具调用请求: {actual_name}")
     await send_mcp_message(conn, payload)
 
     try:

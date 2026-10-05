@@ -3,6 +3,8 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.media_handler import MediaHandler
+from core.api.recovery_handler import enter_download_mode
 
 TAG = __name__
 
@@ -13,6 +15,7 @@ class SimpleHttpServer:
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.media_handler = MediaHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -65,6 +68,10 @@ class SimpleHttpServer:
                 # 添加路由
                 app.add_routes(
                     [
+                        web.get("/media/{filename}", self.media_handler.get),
+                        web.post("/admin/recovery/enter", enter_download_mode),
+                        web.get("/media/opus/{filename}", self.media_handler.opus),
+                        web.get("/media/display/{filename}", self.media_handler.display_image),
                         web.get("/mcp/vision/explain", self.vision_handler.handle_get),
                         web.post(
                             "/mcp/vision/explain", self.vision_handler.handle_post
