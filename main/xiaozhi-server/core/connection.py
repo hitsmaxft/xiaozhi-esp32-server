@@ -45,6 +45,7 @@ from core.utils.prompt_manager import PromptManager
 from core.utils.voiceprint_provider import VoiceprintProvider
 from core.utils.util import get_system_error_response
 from core.utils import textUtils
+from core.device_use_turn import finish_turn as finish_device_use_turn
 
 
 TAG = __name__
@@ -69,6 +70,8 @@ class ConnectionHandler:
         self.common_config = config
         self.config = copy.deepcopy(config)
         self.session_id = str(uuid.uuid4())
+        self._chat_turn = threading.local()
+        self.device_use_started_turns = set()
         self.logger = setup_logging()
         self.server = server  # 保存server实例的引用
 
@@ -969,6 +972,25 @@ class ConnectionHandler:
         self.dialogue.update_system_message(self.prompt)
 
     def chat(self, query, depth=0):
+        if depth == 0:
+            turn_id = uuid.uuid4().hex
+            self._chat_turn.id = turn_id
+            try:
+                return self._chat_impl(query, depth)
+            finally:
+                try:
+                    if turn_id in self.device_use_started_turns and self.loop:
+                        asyncio.run_coroutine_threadsafe(
+                            finish_device_use_turn(self, turn_id, self.client_abort), self.loop
+                        )
+                except RuntimeError as error:
+                    self.logger.bind(tag=TAG).warning(
+                        f"Device Use 对话结束调度失败: {error}")
+                finally:
+                    del self._chat_turn.id
+        return self._chat_impl(query, depth)
+
+    def _chat_impl(self, query, depth=0):
         # 保存当前任务的sentence_id到局部变量，避免被新任务覆盖
         current_sentence_id = None
 
@@ -978,7 +1000,7 @@ class ConnectionHandler:
         # 为最顶层时新建会话ID和发送FIRST请求
         current_user_message = None
         if depth == 0:
-            current_sentence_id = str(uuid.uuid4().hex)
+            current_sentence_id = self._chat_turn.id
             self.sentence_id = current_sentence_id  # 更新共享属性
             current_user_message = Message(role="user", content=query)
             self.dialogue.put(current_user_message)
@@ -991,7 +1013,7 @@ class ConnectionHandler:
             )
         else:
             # 递归调用时，使用当前的sentence_id
-            current_sentence_id = self.sentence_id
+            current_sentence_id = getattr(self._chat_turn, "id", self.sentence_id)
 
         # 设置最大递归深度，避免无限循环，可根据实际需求调整
         MAX_DEPTH = 5
@@ -1162,6 +1184,9 @@ class ConnectionHandler:
                 # 收集所有工具调用的 Future
                 futures_with_data = []
                 for tool_call_data in tool_calls_list:
+                    if not tool_call_data.get("id"):
+                        tool_call_data["id"] = uuid.uuid4().hex
+                    tool_call_data["deviceUseTurnId"] = current_sentence_id
                     self.logger.bind(tag=TAG).debug(
                         f"function_name={tool_call_data['name']}, function_id={tool_call_data['id']}, function_arguments={tool_call_data['arguments']}"
                     )

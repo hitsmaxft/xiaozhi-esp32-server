@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import aiohttp
+from core.device_use_turn import call_metadata, control_url
 
 from plugins_func.register import Action, ActionResponse, ToolType, register_function
 
@@ -49,10 +50,12 @@ async def set_rlcd_expression(conn, expression: str):
     try:
         timeout = aiohttp.ClientTimeout(total=8)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            headers = {"Authorization": f"Bearer {token}"}
+            metadata = await call_metadata(conn, session, headers)
             async with session.post(
-                "http://127.0.0.1:8767/expression",
-                json={"id": expression},
-                headers={"Authorization": f"Bearer {token}"},
+                control_url("/expression"),
+                json={"id": expression, **metadata},
+                headers=headers,
             ) as response:
                 result = await response.json()
                 if response.status != 200 or not result.get("accepted"):

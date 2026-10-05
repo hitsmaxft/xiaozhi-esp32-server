@@ -1,8 +1,12 @@
 """Resolve local/NAS media names on the server, then call the thin client."""
 
+import os
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
+import aiohttp
+
+from core.device_use_turn import call_metadata, control_headers, control_url
 from core.providers.tools.device_mcp.mcp_handler import call_mcp_tool
 from plugins_func.register import Action, ActionResponse, ToolType, register_function
 
@@ -68,6 +72,29 @@ async def play_local_media(conn, filename: str):
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return ActionResponse(Action.RESPONSE, response="媒体服务地址未配置")
     url = f"{parsed.scheme}://{parsed.netloc}/media/opus/{quote(filename)}"
+    allowed = {
+        item.strip().lower()
+        for item in os.environ.get("XIAOZHI_DEVICE_USE_DEVICE_IDS", "").split(",")
+        if item.strip()
+    }
+    if (conn.headers or {}).get("device-id", "").lower() in allowed:
+        try:
+            timeout = aiohttp.ClientTimeout(total=8)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                headers = control_headers()
+                metadata = await call_metadata(conn, session, headers)
+                async with session.post(
+                    control_url("/media/play"),
+                    json={"url": url, **metadata}, headers=headers,
+                ) as response:
+                    result = await response.json()
+                    if response.status != 200 or not result.get("accepted"):
+                        raise RuntimeError(result.get("error", "设备未确认媒体请求"))
+        except (aiohttp.ClientError, TimeoutError, OSError, ValueError,
+                RuntimeError) as error:
+            return ActionResponse(Action.RESPONSE, response=f"设备播放请求失败：{error}")
+        return ActionResponse(Action.RECORD, result=f"已排队播放 {filename}",
+                              response=f"即将播放 {filename}")
     if not getattr(conn, "mcp_client", None):
         return ActionResponse(Action.RESPONSE, response="设备没有 MCP 连接")
     try:

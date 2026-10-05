@@ -14,6 +14,7 @@ from .device_iot import DeviceIoTExecutor
 from .device_mcp import DeviceMCPExecutor
 from .mcp_endpoint import MCPEndpointExecutor
 from core.handle.sendAudioHandle import send_display_message
+from core.device_use_turn import turn_id_context, tool_id_context
 
 
 class UnifiedToolHandler:
@@ -140,15 +141,22 @@ class UnifiedToolHandler:
         self, conn, function_call_data: Dict[str, Any]
     ) -> Optional[ActionResponse]:
         """处理LLM函数调用"""
+        turn_token = turn_id_context.set(function_call_data.get("deviceUseTurnId"))
+        tool_token = tool_id_context.set(function_call_data.get("id"))
         try:
             # 处理多函数调用
             if "function_calls" in function_call_data:
                 responses = []
-                for call in function_call_data["function_calls"]:
-                    result = await self.tool_manager.execute_tool(
-                        call["name"], call.get("arguments", {})
-                    )
-                    responses.append(result)
+                for index, call in enumerate(function_call_data["function_calls"]):
+                    nested_id = call.get("id") or f"{function_call_data.get('id')}:{index}"
+                    nested_token = tool_id_context.set(nested_id)
+                    try:
+                        result = await self.tool_manager.execute_tool(
+                            call["name"], call.get("arguments", {})
+                        )
+                        responses.append(result)
+                    finally:
+                        tool_id_context.reset(nested_token)
                 return self._combine_responses(responses)
 
             # 处理单函数调用
@@ -181,6 +189,9 @@ class UnifiedToolHandler:
         except Exception as e:
             self.logger.error(f"处理function call错误: {e}")
             return ActionResponse(action=Action.ERROR, response=str(e))
+        finally:
+            tool_id_context.reset(tool_token)
+            turn_id_context.reset(turn_token)
 
     def _combine_responses(self, responses: List[ActionResponse]) -> ActionResponse:
         """合并多个函数调用的响应"""

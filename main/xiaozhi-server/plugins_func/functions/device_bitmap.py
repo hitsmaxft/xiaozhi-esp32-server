@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import aiohttp
+from core.device_use_turn import call_metadata, control_url
 from PIL import Image, ImageDraw, ImageFont
 
 from plugins_func.register import Action, ActionResponse, ToolType, register_function
@@ -239,11 +240,13 @@ async def draw_rlcd_bitmap(conn, icon: str, title: str, durationMs: int = 8000,
     try:
         timeout = aiohttp.ClientTimeout(total=8)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            headers = {"Authorization": f"Bearer {token}"}
+            metadata = await call_metadata(conn, session, headers)
             async with session.post(
-                "http://127.0.0.1:8767/bitmap",
+                control_url("/bitmap"),
                 json={"width": WIDTH, "height": HEIGHT, "durationMs": durationMs,
-                      "dataBase64": base64.b64encode(bits).decode("ascii")},
-                headers={"Authorization": f"Bearer {token}"},
+                      "dataBase64": base64.b64encode(bits).decode("ascii"), **metadata},
+                headers=headers,
             ) as response:
                 result = await response.json()
                 if response.status != 200 or not result.get("accepted"):
