@@ -5,13 +5,15 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import aiohttp
 from aiohttp import web
 
 from core import device_use_turn
 from core.connection import ConnectionHandler
+from plugins_func.functions.device_bitmap import draw_rlcd_bitmap
+from plugins_func.functions.device_expression import set_rlcd_expression
 from plugins_func.functions.local_media import play_local_media
 from plugins_func.register import Action
 
@@ -44,11 +46,23 @@ class DeviceUseTurnTest(unittest.IsolatedAsyncioTestCase):
             return web.json_response({"accepted": True,
                 "call": {"callId": data["callId"], "scope": "SESSION"}})
 
+        async def expression(request):
+            data = await request.json()
+            self.calls.append(("expression", data))
+            return web.json_response({"accepted": True})
+
+        async def bitmap(request):
+            data = await request.json()
+            self.calls.append(("bitmap", data))
+            return web.json_response({"accepted": True})
+
         app = web.Application()
         app.router.add_post("/calls/begin", begin)
         app.router.add_post("/calls/complete", end)
         app.router.add_post("/calls/cancel", end)
         app.router.add_post("/media/play", play)
+        app.router.add_post("/expression", expression)
+        app.router.add_post("/bitmap", bitmap)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, "127.0.0.1", 0)
@@ -128,6 +142,36 @@ class DeviceUseTurnTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 device_use_turn.tool_id_context.reset(tool_token)
                 device_use_turn.turn_id_context.reset(turn_token)
+
+    async def test_expression_is_recorded_without_speaking(self):
+        conn = SimpleNamespace(device_use_started_turns=set(),
+                               headers={"device-id": "dev-id"})
+        with patch.dict(os.environ, {"XIAOZHI_DEVICE_USE_DEVICE_IDS": "dev-id"}):
+            result = await set_rlcd_expression(conn, "neutral")
+        self.assertEqual(result.action, Action.RECORD)
+        self.assertEqual(result.result, "已让设备显示平静表情")
+        self.assertEqual(self.calls[-1], ("expression", {"id": "neutral"}))
+
+        handler = object.__new__(ConnectionHandler)
+        handler.tts = Mock()
+        handler.dialogue = Mock()
+        handler._handle_function_result([(result, {
+            "id": "tool-1", "name": "set_rlcd_expression", "arguments": "{}",
+        })], depth=0)
+        handler.tts.tts_one_sentence.assert_not_called()
+        handler.tts.store_tts_text.assert_not_called()
+        self.assertEqual(handler.dialogue.put.call_count, 3)
+
+    async def test_bitmap_is_recorded_without_speaking(self):
+        conn = SimpleNamespace(device_use_started_turns=set(),
+                               headers={"device-id": "dev-id"})
+        with patch.dict(os.environ, {"XIAOZHI_DEVICE_USE_DEVICE_IDS": "dev-id"}), \
+             patch("plugins_func.functions.device_bitmap.render_icon_title",
+                   return_value=b"bitmap"):
+            result = await draw_rlcd_bitmap(conn, "cat", "猫")
+        self.assertEqual(result.action, Action.RECORD)
+        self.assertEqual(result.result, "已在屏幕显示猫")
+        self.assertEqual(self.calls[-1][0], "bitmap")
 
     async def test_chat_worker_completes_its_own_turn(self):
         conn = object.__new__(ConnectionHandler)

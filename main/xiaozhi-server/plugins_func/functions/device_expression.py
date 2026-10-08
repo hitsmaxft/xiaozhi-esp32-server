@@ -1,4 +1,4 @@
-"""Send a spoken expression request through the local RLCD Device Use Host."""
+"""Send an expression request through the local RLCD Device Use Host."""
 
 import os
 from pathlib import Path
@@ -64,4 +64,4 @@ async def set_rlcd_expression(conn, expression: str):
         return ActionResponse(Action.RESPONSE, response=f"表情动作失败：{error}")
     labels = {"happy": "开心", "sad": "难过", "surprised": "惊讶", "neutral": "平静"}
     text = f"已让设备显示{labels[expression]}表情"
-    return ActionResponse(Action.RESPONSE, response=text)
+    return ActionResponse(Action.RECORD, result=text)

@@ -253,4 +253,4 @@ async def draw_rlcd_bitmap(conn, icon: str, title: str, durationMs: int = 8000,
                     raise RuntimeError(result.get("error", "设备未接受位图"))
     except (aiohttp.ClientError, TimeoutError, ValueError, RuntimeError) as error:
         return ActionResponse(Action.RESPONSE, response=f"绘图失败：{error}")
-    return ActionResponse(Action.RESPONSE, response=f"已在屏幕显示{title.strip()}")
+    return ActionResponse(Action.RECORD, result=f"已在屏幕显示{title.strip()}")
