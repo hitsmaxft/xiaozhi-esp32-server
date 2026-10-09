@@ -42,7 +42,7 @@ async def call_metadata(conn, session, headers):
     if not turn_id:
         return {}
     root = await _post(session, "/calls/begin", {"callId": turn_id}, headers)
-    if root.get("callId") != turn_id or root.get("state") != "accepted":
+    if root.get("callId") != turn_id or root.get("state") != "active":
         raise RuntimeError("Device Use 对话调用未被设备接受")
     conn.device_use_started_turns.add(turn_id)
     tool_id = tool_id_context.get()

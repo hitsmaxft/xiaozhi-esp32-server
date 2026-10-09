@@ -28,7 +28,7 @@ class DeviceUseTurnTest(unittest.IsolatedAsyncioTestCase):
             data = await request.json()
             self.calls.append(("begin", data))
             call = self.state.setdefault(data["callId"], {
-                "callId": data["callId"], "state": "accepted", "generation": 1,
+                "callId": data["callId"], "state": "active", "generation": 1,
             })
             return web.json_response(call)
 

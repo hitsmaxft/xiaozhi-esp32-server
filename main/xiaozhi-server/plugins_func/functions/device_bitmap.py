@@ -120,8 +120,10 @@ def _title_font_path(style: str) -> Path:
         if not path.is_file():
             raise ValueError("RLCD_TITLE_FONT_FILE does not exist")
         return path
+    # Fontconfig's PingFang match can select a partial TTC face in Pillow,
+    # leaving some common Chinese characters as .notdef boxes.
     result = subprocess.run(
-        ["fc-match", "-f", "%{file}", "PingFang SC"],
+        ["fc-match", "-f", "%{file}", "LXGW WenKai Mono"],
         capture_output=True, text=True, timeout=3, check=False,
     )
     path = Path(result.stdout.strip())
